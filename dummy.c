@@ -13,10 +13,73 @@
 // of_match_ptr
 #include <linux/of.h>
 
+static const char * __restrict myy_bool_str
+(bool value)
+{
+	return value ? "true" : "false";
+}
+
+static void print_platform_device
+(struct platform_device const * __restrict pdev)
+{
+	printk(KERN_INFO
+		"Name               : %s\n"
+		"ID                 : %d\n"
+		"ID auto            : %s\n"
+		"Device (name)      : %s\n"
+		"Num resources      : %u\n"
+		"Platform device ID : %s\n",
+		pdev->name,
+		pdev->id,
+		myy_bool_str(pdev->id_auto),
+		dev_name(&pdev->dev),
+		pdev->num_resources,
+		pdev->id_entry->name
+	);
+}
+
+static void print_device_node_properties
+(struct device_node const * __restrict dev_node)
+{
+	struct property const * __restrict current_property =
+		dev_node->properties;
+	while(current_property) {
+		printk(KERN_INFO
+			"-> Property\n"
+			"   Name   : %s\n"
+			"   Length : %d\n",
+			current_property->name,
+			current_property->length
+		);
+		current_property = current_property->next;
+	}
+}
+
+static void print_platform_device_node
+(struct platform_device const * __restrict pdev)
+{
+	struct device_node const * __restrict dev_node = pdev->dev.of_node;
+	printk(KERN_INFO
+		"[Device node of : %s]\n"
+		"Name      : %pOFn\n"
+		"Type      : %s\n"
+		"Phandle   : %pOFp\n"
+		"Full name : %pOFf\n",
+		dev_name(&pdev->dev),
+		dev_node,
+		dev_node->type,
+		dev_node,
+		dev_node
+	);
+	print_device_node_properties(dev_node);
+}
+
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
 	printk(KERN_INFO "Hello MEOW !\n");
+	print_platform_device(pdev);
+	print_platform_device_node(pdev);
 	return 0;
 }
 
