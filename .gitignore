@@ -1,0 +1,13 @@
+*.o
+.tmp_versions
+*.symvers
+*.ko
+*#
+\#*
+*.swp
+*.bak
+*~
+*.kate-swp
+*.cmd
+modules.order
+*.mod.c
