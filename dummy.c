@@ -13,6 +13,9 @@
 // of_match_ptr
 #include <linux/of.h>
 
+// of_find_device_by_node
+#include <linux/of_platform.h>
+
 static const char * __restrict myy_bool_str
 (bool value)
 {
@@ -55,6 +58,43 @@ static void print_device_node_properties
 	}
 }
 
+static void print_platform_device_device
+(struct platform_device const * __restrict pdev)
+{
+	struct device const * __restrict dev = &pdev->dev;
+
+	dev_info(dev, "Parent address         : %p\n", dev->parent           );
+	dev_info(dev, "Device private address : %p\n", dev->p                );
+	dev_info(dev, "Kobject (name)         : %s\n", dev->kobj.name        );
+	dev_info(dev, "Initial name           : %s\n", dev->init_name        );
+	if (dev->type)
+		dev_info(dev, "Device type (name)     : %s\n", dev->type->name);
+	else
+		dev_info(dev, "No device type defined\n");
+	dev_info(dev, "Mutex (Not shown)\n");
+
+	if (dev->bus) {
+		dev_info(dev, "Bus type (name)        : %s\n", dev->bus->name);
+		dev_info(dev, "Bus type (dev name)    : %s\n", dev->bus->dev_name);
+	}
+	else
+		dev_info(dev, "No bus defined\n");
+
+	if (dev->driver) {
+		dev_info(dev, "Device driver (name)   : %s\n", dev->driver->name);
+		if (dev->driver->bus)
+			dev_info(dev, "Device driver Bus name : %s\n", dev->driver->bus->name);
+		else
+			dev_info(dev, "No bus defined on the device driver\n");
+	}
+	else
+		dev_info(dev, "No device driver\n");
+
+	dev_info(dev, "Platform data address  : %p\n", dev->platform_data    );
+	dev_info(dev, "Driver data address    : %p\n", dev->driver_data      );
+
+}
+
 static void print_platform_device_node
 (struct platform_device const * __restrict pdev)
 {
@@ -74,12 +114,37 @@ static void print_platform_device_node
 	print_device_node_properties(dev_node);
 }
 
+static struct platform_device * __restrict obtain_iommu_device
+(struct device_node * dev_node)
+{
+	struct device_node * __restrict iommu_device_node =
+		of_parse_phandle(dev_node, "iommus", 0);
+	struct platform_device * __restrict iommu_platform_device = NULL;
+		
+	if (iommu_device_node) {
+		iommu_platform_device = of_find_device_by_node(iommu_device_node);
+	}
+	
+	return iommu_platform_device;
+}
+
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
+	struct platform_device * __restrict iommu_platform_device = NULL;
+
 	printk(KERN_INFO "Hello MEOW !\n");
 	print_platform_device(pdev);
+	print_platform_device_device(pdev);
 	print_platform_device_node(pdev);
+
+	printk(KERN_INFO "Try to get the IOMMU !\n");
+	iommu_platform_device = obtain_iommu_device(pdev->dev.of_node);
+	if (iommu_platform_device) {
+		print_platform_device(iommu_platform_device);
+		print_platform_device_device(iommu_platform_device);
+		print_platform_device_node(iommu_platform_device);
+	}
 	return 0;
 }
 
