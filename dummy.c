@@ -117,6 +117,7 @@ static void print_platform_device_node
 	print_device_node_properties(dev_node);
 }
 
+struct iommu_domain * __restrict iommu_domain = NULL;
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
@@ -134,7 +135,11 @@ static int myy_vpu_probe(struct platform_device * pdev)
 	   the bus platform (type : struct bus_type).
 	 */
 	if (iommu_present(pdev->dev.bus)) {
+		iommu_domain = iommu_domain_alloc(pdev->dev.bus);
 		dev_info(&pdev->dev, "IOMMU present on device !\n");
+		dev_info(&pdev->dev, "IOMMU Page Size Bitmap : %lu\n",
+			iommu_domain->pgsize_bitmap
+		);
 	}
 
 	return 0;
@@ -143,6 +148,14 @@ static int myy_vpu_probe(struct platform_device * pdev)
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_remove(struct platform_device * pdev)
 {
+	if (iommu_domain) {
+		dev_info(
+			&pdev->dev, 
+			"IOMMU Domain was allocated. Deallocating now.\n"
+		);
+		iommu_domain_free(iommu_domain);
+		iommu_domain = NULL;
+	}
 	printk(KERN_INFO "Nooooo !\n");
 	return 0;
 }
