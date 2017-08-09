@@ -16,6 +16,9 @@
 // of_find_device_by_node
 #include <linux/of_platform.h>
 
+// iommu_present
+#include <linux/iommu.h>
+
 static const char * __restrict myy_bool_str
 (bool value)
 {
@@ -114,37 +117,26 @@ static void print_platform_device_node
 	print_device_node_properties(dev_node);
 }
 
-static struct platform_device * __restrict obtain_iommu_device
-(struct device_node * dev_node)
-{
-	struct device_node * __restrict iommu_device_node =
-		of_parse_phandle(dev_node, "iommus", 0);
-	struct platform_device * __restrict iommu_platform_device = NULL;
-		
-	if (iommu_device_node) {
-		iommu_platform_device = of_find_device_by_node(iommu_device_node);
-	}
-	
-	return iommu_platform_device;
-}
-
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
-	struct platform_device * __restrict iommu_platform_device = NULL;
-
 	printk(KERN_INFO "Hello MEOW !\n");
 	print_platform_device(pdev);
 	print_platform_device_device(pdev);
 	print_platform_device_node(pdev);
 
-	printk(KERN_INFO "Try to get the IOMMU !\n");
-	iommu_platform_device = obtain_iommu_device(pdev->dev.of_node);
-	if (iommu_platform_device) {
-		print_platform_device(iommu_platform_device);
-		print_platform_device_device(iommu_platform_device);
-		print_platform_device_node(iommu_platform_device);
+	/* Most, if not every piece of code encountered prefer to use
+	
+	      if (iommu_present(&platform_bus_type))
+	      	iommu_domain_alloc(&platform_bus_type);
+	
+	   Turns out that platform_bus_type is a global identifier providing
+	   the bus platform (type : struct bus_type).
+	 */
+	if (iommu_present(pdev->dev.bus)) {
+		dev_info(&pdev->dev, "IOMMU present on device !\n");
 	}
+
 	return 0;
 }
 
