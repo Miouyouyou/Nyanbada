@@ -117,10 +117,30 @@ static void print_platform_device_node
 	print_device_node_properties(dev_node);
 }
 
-struct iommu_domain * __restrict iommu_domain = NULL;
+struct myy_driver_data {
+	struct iommu_domain * __restrict iommu_domain;
+};
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
+	/* Setup the private data storage for this device.
+	 * 
+	 * The data will be available through the device structure until
+	 * the driver module gets unloaded.
+	 * 
+	 * platform_set_drvdata is equivalent to dev_set_drvdata, except that
+	 * - dev_set_drvdata takes a device pointer
+	 * - platform_set_drvdata takes a platform_device pointer
+	 * 
+	 * The main difference between kzalloc and devm_kzalloc is that
+	 * allocated memory with devm_kzalloc gets automagically freed when
+	 * releasing the driver. */
+	struct myy_driver_data * __restrict const data =
+		devm_kzalloc(&pdev->dev, sizeof(struct iommu *), GFP_KERNEL);
+
+	data->iommu_domain = NULL;
+	platform_set_drvdata(pdev, data);
+	
 	printk(KERN_INFO "Hello MEOW !\n");
 	print_platform_device(pdev);
 	print_platform_device_device(pdev);
@@ -135,11 +155,24 @@ static int myy_vpu_probe(struct platform_device * pdev)
 	   the bus platform (type : struct bus_type).
 	 */
 	if (iommu_present(pdev->dev.bus)) {
-		iommu_domain = iommu_domain_alloc(pdev->dev.bus);
+		struct iommu_domain * __restrict const iommu_domain =
+			iommu_domain_alloc(pdev->dev.bus);
 		dev_info(&pdev->dev, "IOMMU present on device !\n");
 		dev_info(&pdev->dev, "IOMMU Page Size Bitmap : %lu\n",
 			iommu_domain->pgsize_bitmap
 		);
+		dev_info(&pdev->dev, "IOMMU Page Size Bitmap (ops) : %lu\n",
+			iommu_domain->ops->pgsize_bitmap
+		);
+		dev_info(&pdev->dev, "The System page size : %lu\n",
+			PAGE_SIZE
+		);
+		dev_info(&pdev->dev,
+			"Does the IOMMU support the system page size : %s\n",
+			myy_bool_str(PAGE_SIZE & iommu_domain->ops->pgsize_bitmap)
+		);
+		
+		data->iommu_domain = iommu_domain;
 	}
 
 	return 0;
@@ -148,15 +181,22 @@ static int myy_vpu_probe(struct platform_device * pdev)
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_remove(struct platform_device * pdev)
 {
-	if (iommu_domain) {
+	struct myy_driver_data * __restrict const data =
+		(struct myy_driver_data * __restrict) platform_get_drvdata(pdev);
+
+	if (data->iommu_domain != NULL) {
 		dev_info(
 			&pdev->dev, 
 			"IOMMU Domain was allocated. Deallocating now.\n"
 		);
-		iommu_domain_free(iommu_domain);
-		iommu_domain = NULL;
+		iommu_domain_free(data->iommu_domain);
+		data->iommu_domain = NULL;
 	}
-	printk(KERN_INFO "Nooooo !\n");
+	printk(KERN_INFO "Okay, I'll go, I'll go... !\n");
+	
+	// data was allocated through devm_kzalloc and will be deallocated
+	// automatically.
+
 	return 0;
 }
 
