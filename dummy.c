@@ -154,25 +154,33 @@ static int myy_vpu_probe(struct platform_device * pdev)
 	   Turns out that platform_bus_type is a global identifier providing
 	   the bus platform (type : struct bus_type).
 	 */
+	
+	/* Trying new IOMMU API ... without much success... */
+	/* iommu_request_dm_for_dev
+	 * → Cannot work as it does not allocate an IOMMU_DMA_DOMAIN domain,
+	 *   which is the only domain understood by Rockchip systems.
+	 *   Exynos systems seem to have the same behaviour too.
+	 * iommu_group_get_for_dev
+	 * → Nice and all, but won't lead us very far.
+	 * iommu_get_domain_for_dev
+	 * → This HAS to work in order to use the DMA-IOMMU SG mapping
+	 *   functions.
+	 *   However, it doesn't because the IOMMU group of the device does
+	 *   not have any domain set up.
+	 *   Now IOMMU Groups are opaque structures...
+	 *   Setting up the domain of an IOMMU group seems to be a fucking
+	 *   pain in the ass and can easily CRASH the machine when done wrong.
+	 */
 	if (iommu_present(pdev->dev.bus)) {
-		struct iommu_domain * __restrict const iommu_domain =
-			iommu_domain_alloc(pdev->dev.bus);
-		dev_info(&pdev->dev, "IOMMU present on device !\n");
-		dev_info(&pdev->dev, "IOMMU Page Size Bitmap : %lu\n",
-			iommu_domain->pgsize_bitmap
-		);
-		dev_info(&pdev->dev, "IOMMU Page Size Bitmap (ops) : %lu\n",
-			iommu_domain->ops->pgsize_bitmap
-		);
-		dev_info(&pdev->dev, "The System page size : %lu\n",
-			PAGE_SIZE
-		);
+		int ret = iommu_request_dm_for_dev(&pdev->dev);
+
 		dev_info(&pdev->dev,
-			"Does the IOMMU support the system page size : %s\n",
-			myy_bool_str(PAGE_SIZE & iommu_domain->ops->pgsize_bitmap)
-		);
-		
-		data->iommu_domain = iommu_domain;
+			"BUS : %p, BUS IOMMU OPS : %p\n"
+			"ret : %d, IOMMU Domain : %p \n",
+			pdev->dev.bus, pdev->dev.bus->iommu_ops,
+			ret, iommu_get_domain_for_dev(&pdev->dev));
+
+		//data->iommu_domain = iommu_domain;
 	}
 
 	return 0;
