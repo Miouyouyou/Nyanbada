@@ -34,6 +34,22 @@ struct myy_driver_data {
 	struct iommu_domain * __restrict iommu_domain;
 };
 
+/* The current objectives are :
+ * - Get a DMA buffer using PRIME from a user application
+ * - Send the file descriptor of this DMA Buffer to the driver, using
+ *   simple IOCTL
+ * - Get the DMA Buffer from this FD
+ * - Attach it to the VPU device
+ * - Map it
+ * - Write something in it
+ * - Unmap it
+ * - Detach it
+ * - Check from the user space app if the data were written correctly
+ *   in the DMA buffer
+ * 
+ * Special IOMMU operations might be required for that to work.
+ */
+
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
@@ -54,45 +70,6 @@ static int myy_vpu_probe(struct platform_device * pdev)
 
 	data->iommu_domain = NULL;
 	platform_set_drvdata(pdev, data);
-
-	printk(KERN_INFO "Hello MEOW !\n");
-	print_platform_device(pdev);
-	print_platform_device_device(pdev);
-	print_platform_device_device_node(pdev);
-
-	/* Most, if not every piece of code encountered prefer to use
-	
-	      if (iommu_present(&platform_bus_type))
-	      	iommu_domain_alloc(&platform_bus_type);
-	
-	   Turns out that platform_bus_type is a global identifier providing
-	   the bus platform (type : struct bus_type).
-	 */
-
-	/* Trying new IOMMU API ... without much success... */
-	/* iommu_request_dm_for_dev
-	 * → Cannot work as it does not allocate an IOMMU_DMA_DOMAIN domain,
-	 *   which is the only domain understood by Rockchip systems.
-	 *   Exynos systems seem to have the same behaviour too.
-	 * iommu_group_get_for_dev
-	 * → Nice and all, but won't lead us very far.
-	 * iommu_get_domain_for_dev
-	 * → This HAS to work in order to use the DMA-IOMMU SG mapping
-	 *   functions.
-	 *   However, it doesn't because the IOMMU group of the device does
-	 *   not have any domain set up.
-	 *   Now IOMMU Groups are opaque structures...
-	 *   Setting up the domain of an IOMMU group seems to be a fucking
-	 *   pain in the ass and can easily CRASH the machine when done wrong.
-	 */
-	if (iommu_present(pdev->dev.bus)) {
-		struct iommu_domain * __restrict const iommu_domain =
-			pdev->dev.bus->iommu_ops->domain_alloc(IOMMU_DOMAIN_DMA);
-			//iommu_domain_alloc(pdev->dev.bus);
-
-		print_iommu_domain(iommu_domain);
-		data->iommu_domain = iommu_domain;
-	}
 
 	return 0;
 }
