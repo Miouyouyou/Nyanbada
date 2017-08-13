@@ -11,3 +11,5 @@
 *.cmd
 modules.order
 *.mod.c
+*.kdev4
+.kdev4

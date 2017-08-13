@@ -1,6 +1,6 @@
-MYY_KERNEL_DIR = ../RockMyy/linux
-ARCH = arm
-CROSS_COMPILE = armv7a-hardfloat-linux-gnueabi-
+MYY_KERNEL_DIR ?= ../RockMyy/linux
+ARCH ?= arm
+CROSS_COMPILE ?= armv7a-hardfloat-linux-gnueabi-
 
 ccflags-y += -DMYY_TESTS
 
@@ -16,3 +16,6 @@ all:
 
 clean:
 	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) -C $(MYY_KERNEL_DIR) clean
+
+install:
+	scp myy-vpu.ko 10.100.0.55:/tmp
