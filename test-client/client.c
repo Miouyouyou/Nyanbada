@@ -3,6 +3,12 @@
 #include <libdrm/drm.h>
 #include <libdrm/drm_mode.h>
 
+// drmGetCap. Even though we're not using X11...
+#include <xf86drm.h>
+
+// O_CLOEXEC
+#include <asm-generic/fcntl.h>
+
 #include <errno.h>
 
 // memset
@@ -34,7 +40,7 @@ static int allocate_drm_dumb_buffer
 	dumb_buffer->height = height;
 	dumb_buffer->bpp   = bpp;
 
-	if (ioctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &dumb_buffer) < 0)
+	if (ioctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, dumb_buffer) < 0)
 		ret = -errno;
 
 	return ret;
@@ -51,7 +57,7 @@ static void free_dumb_buffer
 }
 
 static int drm_open_node(char const * __restrict const dev_node_path) {
-	return open(dev_node_path, O_RDWR);
+	return open(dev_node_path, O_RDWR | O_CLOEXEC);
 }
 
 static int drm_convert_buffer_handle_to_prime_fd
@@ -67,6 +73,15 @@ static int drm_convert_buffer_handle_to_prime_fd
 	ioctl(drm_fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &prime_structure);
 
 	return prime_structure.fd;
+}
+
+static uint_fast8_t drm_node_support_dumb_buffers(int const drm_fd)
+{
+	uint64_t support_dumb;
+
+	return 
+		drmGetCap(drm_fd, DRM_CAP_DUMB_BUFFER, &support_dumb) >= 0 &&
+		support_dumb;
 }
 
 int main() {
@@ -85,7 +100,16 @@ int main() {
 		goto could_not_open_drm_fd;
 	}
 
-	if (allocate_drm_dumb_buffer(drm_fd,1280,720,32,&dumb_buffer) < 0) {
+	if (!drm_node_support_dumb_buffers(drm_fd)) {
+		fprintf(
+			stderr,
+			"Looks like %s do not support Dumb Buffers...\n",
+			drm_hardware_dev_node_path
+		);
+		goto dumb_buffers_not_supported;
+	}
+
+	if (allocate_drm_dumb_buffer(drm_fd,1,1,32,&dumb_buffer) < 0) {
 		fprintf(
 			stderr, "Could not allocate a 1280x720@32bpp frame buffer... %m\n"
 		);
@@ -94,18 +118,19 @@ int main() {
 
 	prime_fd = 
 		drm_convert_buffer_handle_to_prime_fd(drm_fd, dumb_buffer.handle);
-	if (prime_fd) {
+	if (prime_fd < 0) {
 		fprintf(
 			stderr, "Unable to convert the GEM Buffer to a DRM Handle ?? %m\n"
 		);
 		goto could_not_export_dumb_buffer;
 	}
 
-	fprintf(stderr, "Got a Prime buffer FD : %d ! Yay !", prime_fd);
+	fprintf(stderr, "Got a Prime buffer FD : %d ! Yay !\n", prime_fd);
 
 could_not_export_dumb_buffer:
 	free_dumb_buffer(drm_fd, dumb_buffer.handle);
 could_not_allocate_drm_dumb_buffer:
+dumb_buffers_not_supported:
 	close(drm_fd);
 could_not_open_drm_fd:
 	return 0;
