@@ -3,16 +3,10 @@
 #include <libdrm/drm.h>
 #include <libdrm/drm_mode.h>
 
-// drmGetCap. Even though we're not using X11...
-#include <xf86drm.h>
-
 // O_CLOEXEC
 #include <asm-generic/fcntl.h>
 
 #include <errno.h>
-
-// memset
-#include <string.h>
 
 // open
 #include <sys/types.h>
@@ -33,8 +27,6 @@ static int allocate_drm_dumb_buffer
  struct drm_mode_create_dumb * __restrict const dumb_buffer)
 {
 	int ret = 0;
-
-	memset(dumb_buffer, 0, sizeof(struct drm_mode_create_dumb));
 
 	dumb_buffer->width  = width;
 	dumb_buffer->height = height;
@@ -63,12 +55,11 @@ static int drm_open_node(char const * __restrict const dev_node_path) {
 static int drm_convert_buffer_handle_to_prime_fd
 (int const drm_fd, int const gem_handle)
 {
-	struct drm_prime_handle prime_structure;
-	
-	memset(&prime_structure, 0, sizeof(prime_structure));
-	prime_structure.handle = gem_handle;
-	prime_structure.flags  = DRM_CLOEXEC;
-	prime_structure.fd     = -1;
+	struct drm_prime_handle prime_structure = {
+		.handle = gem_handle,
+		.flags  = DRM_CLOEXEC,
+		.fd     = -1
+	};
 
 	ioctl(drm_fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &prime_structure);
 
@@ -77,11 +68,15 @@ static int drm_convert_buffer_handle_to_prime_fd
 
 static uint_fast8_t drm_node_support_dumb_buffers(int const drm_fd)
 {
-	uint64_t support_dumb;
 
-	return 
-		drmGetCap(drm_fd, DRM_CAP_DUMB_BUFFER, &support_dumb) >= 0 &&
-		support_dumb;
+	struct drm_get_cap support_dumb = {
+		.capability = DRM_CAP_DUMB_BUFFER,
+		.value      = 0
+	};
+
+	int ret = ioctl(drm_fd, DRM_IOCTL_GET_CAP, &support_dumb);
+	
+	return ret >= 0 && support_dumb.value;
 }
 
 int main() {
