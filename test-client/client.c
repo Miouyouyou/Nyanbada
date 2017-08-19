@@ -25,9 +25,24 @@
 		__func__, __FILE__, __LINE__, ##__VA_ARGS__ \
 	)
 
-// -- UNTESTED FUNCTIONS
+// -- COMPILE, RUN BUT STILL REQUIRE TESTING
+struct myy_drm_internal_structures {
+	drmModeRes       * __restrict drm_resources;
+	drmModeConnector * __restrict valid_connector;
+	drmModeModeInfo  * __restrict chosen_resolution;
+	drmModeEncoder   * __restrict screen_encoder;
+};
+struct myy_drm_frame_buffer {
+	// We won't use resolutions superior to 65K x 65K 
+	uint16_t width, height;
+	// Making it 16 bits will just add padding...
+	uint32_t bpp;
+	drmModeFB * __restrict frame_buffer;
+	struct myy_drm_internal_structures related_structures;
+};
+
 drmModeModeInfo * choose_preferred_resolution_on_connector
-(drmModeConnector * __restrict connector)
+(drmModeConnector * __restrict const connector)
 {
 	drmModeModeInfo * best_resolution = NULL;
 
@@ -42,13 +57,15 @@ drmModeModeInfo * choose_preferred_resolution_on_connector
 
 	return best_resolution;
 }
-int drm_get_best_output(int drm_fd)
+int drm_init_display
+(int const drm_fd,
+ struct myy_drm_frame_buffer * __restrict const myy_fb)
 {
 	/* DRM is based on the fact that you can connect multiple screens,
 	 * on multiple different connectors, which have, of course, multiple
-	 * encoders that transform the ARGB8888 or XRGB8888 framebuffer used
-	 * in the user application into something the selected screen
-	 * comprehend, before sending it.
+	 * encoders that transform applications framebuffer represented in
+	 * XRGB8888 into something the selected screen comprehend, before
+	 * sending it this framebuffer for display.
 	 * 
 	 * The default selection system is simple :
 	 * - We try to find the first connected screen that accept our
@@ -59,7 +76,6 @@ int drm_get_best_output(int drm_fd)
 	drmModeModeInfo    * __restrict chosen_resolution = NULL;
 	drmModeEncoder     * __restrict screen_encoder    = NULL;
 	uint32_t crtc_id;
-	struct modeset_dev * __restrict device;
 	int ret = 0;
 
 	/* Let's see what we can use through this drm node */
@@ -111,8 +127,23 @@ int drm_get_best_output(int drm_fd)
 
 	crtc_id = screen_encoder->crtc_id;
 
+	if (!crtc_id) {
+		LOG("The retrieved encoder has no CRTC attached... ?\n");
+		ret = -ENODATA;
+		goto could_not_retrieve_valid_crtc;
+	}
+
+	myy_fb->related_structures.drm_resources     = drm_resources;
+	myy_fb->related_structures.valid_connector   = valid_connector;
+	myy_fb->related_structures.chosen_resolution = chosen_resolution;
+	myy_fb->related_structures.screen_encoder    = screen_encoder;
+
+	myy_fb->width  = chosen_resolution->hdisplay;
+	myy_fb->height = chosen_resolution->vdisplay;
 	return ret;
 
+could_not_retrieve_valid_crtc:
+	drmModeFreeEncoder(screen_encoder);
 could_not_retrieve_encoder:
 	drmModeFreeModeInfo(chosen_resolution);
 no_valid_resolution:
@@ -121,13 +152,20 @@ no_valid_connector:
 	return ret;
 }
 
+void drm_deinit_display()
+{
+	
+}
+
 // -- TESTED FUNCTIONS
 int main() {
 	char const * __restrict const drm_hardware_dev_node_path =
 		"/dev/dri/card0";
+	struct myy_drm_frame_buffer myy_drm_fb = {0};
 	uint32_t dumb_buffer_handle;
 	int const drm_fd   = drm_open_node(drm_hardware_dev_node_path);
 	int prime_fd = -1;
+	int ret = 0;
 
 	if (drm_fd < 0) {
 		/* %m is actually a GLIBC specific format for strerror(errno) */
@@ -146,8 +184,17 @@ int main() {
 		goto dumb_buffers_not_supported;
 	}
 
-	if (allocate_drm_dumb_buffer(
-	      drm_fd,1280,720,32,&dumb_buffer_handle) < 0) {
+	if (drm_init_display(drm_fd, &myy_drm_fb)) {
+		LOG("Something went wrong when initialiasing the display\n");
+		goto could_not_init_display;
+	}
+
+	ret = allocate_drm_dumb_buffer(
+		drm_fd, myy_drm_fb.width, myy_drm_fb.height, 32,
+		&dumb_buffer_handle
+	);
+
+	if (ret < 0) {
 		LOG("Could not allocate a 1280x720@32bpp frame buffer... %m\n");
 		goto could_not_allocate_drm_dumb_buffer;
 	}
@@ -165,6 +212,7 @@ could_not_export_dumb_buffer:
 	free_drm_dumb_buffer(drm_fd, dumb_buffer_handle);
 could_not_allocate_drm_dumb_buffer:
 dumb_buffers_not_supported:
+could_not_init_display:
 	close(drm_fd);
 could_not_open_drm_fd:
 	return 0;

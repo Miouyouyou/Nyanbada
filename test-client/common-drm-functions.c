@@ -27,7 +27,7 @@ int allocate_drm_dumb_buffer
 		.bpp    = bpp
 	};
 
-	if (ioctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, dumb_buff_req) < 0)
+	if (ioctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &dumb_buff_req) < 0)
 		ret = -errno;
 
 	*dumb_gem_handle = dumb_buff_req.handle;
