@@ -5,9 +5,8 @@
 #include <libdrm/drm.h>
 
 int allocate_drm_dumb_buffer
-(int const drm_fd,
- uint32_t width, uint32_t height, uint32_t bpp,
- uint32_t * __restrict const dumb_gem_handle);
+(int drm_fd,
+ struct drm_mode_create_dumb * __restrict metadata);
 
 void free_drm_dumb_buffer
 (int const drm_fd, uint32_t dumb_handle);

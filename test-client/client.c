@@ -33,11 +33,9 @@ struct myy_drm_internal_structures {
 	drmModeEncoder   * __restrict screen_encoder;
 };
 struct myy_drm_frame_buffer {
-	// We won't use resolutions superior to 65K x 65K 
-	uint16_t width, height;
-	// Making it 16 bits will just add padding...
-	uint32_t bpp;
-	drmModeFB * __restrict frame_buffer;
+	uint8_t * buffer;
+	struct drm_mode_create_dumb metadata;
+	drmModeFB * __restrict underlying_object;
 	struct myy_drm_internal_structures related_structures;
 };
 
@@ -102,7 +100,7 @@ int drm_init_display
 
 	chosen_resolution =
 		choose_preferred_resolution_on_connector(valid_connector);
-	
+
 	if (!chosen_resolution) {
 		LOG(
 			"No preferred resolution on the selected connector %u ?\n",
@@ -114,7 +112,7 @@ int drm_init_display
 
 	screen_encoder =
 		drmModeGetEncoder(drm_fd, valid_connector->encoder_id);
-	
+
 	if (!screen_encoder) {
 		LOG(
 			"Could not retrieve the encoder for mode %s on connector %u.\n",
@@ -138,8 +136,8 @@ int drm_init_display
 	myy_fb->related_structures.chosen_resolution = chosen_resolution;
 	myy_fb->related_structures.screen_encoder    = screen_encoder;
 
-	myy_fb->width  = chosen_resolution->hdisplay;
-	myy_fb->height = chosen_resolution->vdisplay;
+	myy_fb->metadata.width  = chosen_resolution->hdisplay;
+	myy_fb->metadata.height = chosen_resolution->vdisplay;
 	return ret;
 
 could_not_retrieve_valid_crtc:
@@ -152,7 +150,16 @@ no_valid_connector:
 	return ret;
 }
 
+
+
 void drm_deinit_display()
+{
+	
+}
+
+void map_drm_dumb_buffer
+(int const drm_fd,
+ struct drm_mode_create_dumb * __restrict const metadata)
 {
 	
 }
@@ -189,13 +196,16 @@ int main() {
 		goto could_not_init_display;
 	}
 
-	ret = allocate_drm_dumb_buffer(
-		drm_fd, myy_drm_fb.width, myy_drm_fb.height, 32,
-		&dumb_buffer_handle
-	);
+	myy_drm_fb.metadata.bpp = 32;
+	ret = allocate_drm_dumb_buffer(drm_fd, &myy_drm_fb.metadata);
 
 	if (ret < 0) {
-		LOG("Could not allocate a 1280x720@32bpp frame buffer... %m\n");
+		LOG(
+			"Could not allocate a %ux%u@%ubpp frame buffer... %m\n",
+			myy_drm_fb.metadata.width,
+			myy_drm_fb.metadata.height,
+			myy_drm_fb.metadata.bpp
+		);
 		goto could_not_allocate_drm_dumb_buffer;
 	}
 
@@ -207,6 +217,8 @@ int main() {
 	}
 
 	LOG("Got a Prime buffer FD : %d ! Yay !\n", prime_fd);
+
+	map_prime_fd_buffer(drm_fd, prime_fd);
 
 could_not_export_dumb_buffer:
 	free_drm_dumb_buffer(drm_fd, dumb_buffer_handle);

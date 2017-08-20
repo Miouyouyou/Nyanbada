@@ -16,21 +16,12 @@
 
 int allocate_drm_dumb_buffer
 (int const drm_fd,
- uint32_t const width, uint32_t const height, uint32_t const bpp,
- uint32_t * __restrict const dumb_gem_handle)
+ struct drm_mode_create_dumb * __restrict const metadata)
 {
 	int ret = 0;
 
-	struct drm_mode_create_dumb dumb_buff_req = {
-		.width  = width,
-		.height = height,
-		.bpp    = bpp
-	};
-
-	if (ioctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, &dumb_buff_req) < 0)
+	if (ioctl(drm_fd, DRM_IOCTL_MODE_CREATE_DUMB, metadata) < 0)
 		ret = -errno;
-
-	*dumb_gem_handle = dumb_buff_req.handle;
 
 	return ret;
 }
