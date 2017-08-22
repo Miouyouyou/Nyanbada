@@ -17,13 +17,17 @@
 
 #include <errno.h>
 
+#include <sys/mman.h>
+
+// strerror
+#include <string.h>
+
+// rand
+#include <stdlib.h>
+
 #include "common-drm-functions.h"
 
-#define LOG(msg, ...) \
-	fprintf(\
-		stderr, "[%s (%s:%d)] "msg,\
-		__func__, __FILE__, __LINE__, ##__VA_ARGS__ \
-	)
+
 
 // -- COMPILE, RUN BUT STILL REQUIRE TESTING
 struct myy_drm_internal_structures {
@@ -34,6 +38,7 @@ struct myy_drm_internal_structures {
 };
 struct myy_drm_frame_buffer {
 	uint8_t * buffer;
+	uint32_t id;
 	struct drm_mode_create_dumb metadata;
 	drmModeFB * __restrict underlying_object;
 	struct myy_drm_internal_structures related_structures;
@@ -73,7 +78,6 @@ int drm_init_display
 	drmModeConnector   * __restrict valid_connector   = NULL;
 	drmModeModeInfo    * __restrict chosen_resolution = NULL;
 	drmModeEncoder     * __restrict screen_encoder    = NULL;
-	uint32_t crtc_id;
 	int ret = 0;
 
 	/* Let's see what we can use through this drm node */
@@ -123,13 +127,8 @@ int drm_init_display
 		goto could_not_retrieve_encoder;
 	}
 
-	crtc_id = screen_encoder->crtc_id;
-
-	if (!crtc_id) {
-		LOG("The retrieved encoder has no CRTC attached... ?\n");
-		ret = -ENODATA;
-		goto could_not_retrieve_valid_crtc;
-	}
+	print_drmModeResources(drm_resources);
+	print_drmModeModeInfo(chosen_resolution);
 
 	myy_fb->related_structures.drm_resources     = drm_resources;
 	myy_fb->related_structures.valid_connector   = valid_connector;
@@ -140,8 +139,6 @@ int drm_init_display
 	myy_fb->metadata.height = chosen_resolution->vdisplay;
 	return ret;
 
-could_not_retrieve_valid_crtc:
-	drmModeFreeEncoder(screen_encoder);
 could_not_retrieve_encoder:
 	drmModeFreeModeInfo(chosen_resolution);
 no_valid_resolution:
@@ -157,22 +154,48 @@ void drm_deinit_display()
 	
 }
 
-void map_drm_dumb_buffer
-(int const drm_fd,
- struct drm_mode_create_dumb * __restrict const metadata)
+void * mmap_dumb_buffer
+(int drm_fd,
+ struct drm_mode_create_dumb * __restrict const dumb_buffer)
 {
-	
+	struct drm_mode_map_dumb map_request = {
+		.handle = dumb_buffer->handle,
+		.pad    = 0,
+		.offset = 0
+	};
+
+	void * mmapped_address = NULL;
+
+	if (ioctl(drm_fd, DRM_IOCTL_MODE_MAP_DUMB, &map_request) < 0)
+		goto dumb_buffer_mapping_request_denied;
+
+	mmapped_address = mmap(
+		0, dumb_buffer->size, PROT_READ | PROT_WRITE, MAP_SHARED,
+		drm_fd, map_request.offset);
+
+dumb_buffer_mapping_request_denied:
+	return mmapped_address;
+
+}
+
+uint32_t drm_crtc_get_current
+(struct myy_drm_frame_buffer * __restrict const myy_fb)
+{
+	return myy_fb->related_structures.screen_encoder->crtc_id;
 }
 
 // -- TESTED FUNCTIONS
 int main() {
 	char const * __restrict const drm_hardware_dev_node_path =
 		"/dev/dri/card0";
+	const uint32_t fb_depth = 24;
 	struct myy_drm_frame_buffer myy_drm_fb = {0};
-	uint32_t dumb_buffer_handle;
 	int const drm_fd   = drm_open_node(drm_hardware_dev_node_path);
 	int prime_fd = -1;
 	int ret = 0;
+	uint32_t current_crtc_id = 0;
+	drmModeCrtc * this_program_crtc = NULL;
+	drmModeCrtc * crtc_to_restore = NULL;
 
 	if (drm_fd < 0) {
 		/* %m is actually a GLIBC specific format for strerror(errno) */
@@ -209,19 +232,92 @@ int main() {
 		goto could_not_allocate_drm_dumb_buffer;
 	}
 
-	prime_fd = 
-		drm_convert_buffer_handle_to_prime_fd(drm_fd, dumb_buffer_handle);
+	ret = drmModeAddFB(
+		drm_fd,
+		myy_drm_fb.metadata.width, myy_drm_fb.metadata.height,
+		fb_depth, myy_drm_fb.metadata.bpp, myy_drm_fb.metadata.pitch,
+		myy_drm_fb.metadata.handle, &myy_drm_fb.id
+	);
+
+	if (ret) {
+		LOG(
+			"Could not add a framebuffer using drmModeAddFB : %s\n",
+			strerror(ret)
+		);
+		goto could_not_add_frame_buffer;
+	}
+	current_crtc_id = drm_crtc_get_current(&myy_drm_fb);
+
+	if (!current_crtc_id) {
+		LOG("The retrieved encoder has no CRTC attached... ?\n");
+		goto could_not_retrieve_current_crtc;
+	}
+
+	crtc_to_restore = drmModeGetCrtc(drm_fd, current_crtc_id);
+
+	if (!crtc_to_restore) {
+		LOG("Could not retrieve the current CRTC with a valid ID !\n");
+		goto could_not_retrieve_current_crtc;
+	}
+
+	print_crtc(crtc_to_restore);
+
+	ret = drmModeSetCrtc(
+		drm_fd, current_crtc_id, myy_drm_fb.id, 0, 0,
+		&myy_drm_fb.related_structures.valid_connector->connector_id,
+		1, myy_drm_fb.related_structures.chosen_resolution);
+
+	/*prime_fd = drm_convert_buffer_handle_to_prime_fd(
+		drm_fd, myy_drm_fb.metadata.handle);
 	if (prime_fd < 0) {
 		LOG("Unable to convert the GEM handle to a DRM Handle : %m\n");
 		goto could_not_export_dumb_buffer;
 	}
 
-	LOG("Got a Prime buffer FD : %d ! Yay !\n", prime_fd);
+	LOG("Got a Prime buffer FD : %d ! Yay !\n", prime_fd);*/
 
-	map_prime_fd_buffer(drm_fd, prime_fd);
+	myy_drm_fb.buffer = mmap_dumb_buffer(drm_fd, &myy_drm_fb.metadata);
 
-could_not_export_dumb_buffer:
-	free_drm_dumb_buffer(drm_fd, dumb_buffer_handle);
+	if (!myy_drm_fb.buffer || myy_drm_fb.buffer == MAP_FAILED) {
+		LOG("Could not map buffer exported through PRIME : %m\n");
+		goto could_not_map_buffer;
+	}
+	/* Map the buffer and write in it */
+
+	LOG(
+		"Buffer address : %p\n"
+		"Buffer ID      : %u\n"
+		"Buffer width   : %u\n"
+		"Buffer height  : %u\n"
+		"Buffer bpp     : %u\n"
+		"Buffer size    : %llu\n"
+		"Buffer stride  : %u\n",
+		myy_drm_fb.buffer,
+		myy_drm_fb.id,
+		myy_drm_fb.metadata.width,
+		myy_drm_fb.metadata.height,
+		myy_drm_fb.metadata.bpp,
+		myy_drm_fb.metadata.size,
+		myy_drm_fb.metadata.pitch);
+	for (uint_fast64_t pixel = 0, size = myy_drm_fb.metadata.size;
+	     pixel < size; pixel++) {
+		myy_drm_fb.buffer[pixel] = rand();
+	}
+
+	getc(stdin);
+	munmap(myy_drm_fb.buffer, myy_drm_fb.metadata.size);
+
+could_not_map_buffer:
+//could_not_export_dumb_buffer:
+	free_drm_dumb_buffer(drm_fd, myy_drm_fb.metadata.handle);
+	drmModeSetCrtc(
+		drm_fd, crtc_to_restore->crtc_id,
+		crtc_to_restore->buffer_id, 0, 0,
+		&myy_drm_fb.related_structures.valid_connector->connector_id,
+		1, &crtc_to_restore->mode);
+could_not_retrieve_current_crtc:
+could_not_add_frame_buffer:
+	drmModeRmFB(drm_fd, myy_drm_fb.id);
 could_not_allocate_drm_dumb_buffer:
 dumb_buffers_not_supported:
 could_not_init_display:
