@@ -45,7 +45,7 @@ int drm_convert_buffer_handle_to_prime_fd
 {
 	struct drm_prime_handle prime_structure = {
 		.handle = gem_handle,
-		.flags  = DRM_CLOEXEC,
+		.flags  = DRM_CLOEXEC | DRM_RDWR,
 		.fd     = -1
 	};
 

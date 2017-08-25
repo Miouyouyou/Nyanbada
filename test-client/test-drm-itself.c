@@ -27,7 +27,11 @@
 
 #include "common-drm-functions.h"
 
-// -- COMPILE, RUN BUT STILL REQUIRE TESTING
+#include <libdrm/amdgpu.h>
+#include <libdrm/amdgpu_drm.h>
+
+
+// -- STRUCTURES
 struct myy_drm_internal_structures {
 	drmModeRes       * __restrict drm_resources;
 	drmModeConnector * __restrict valid_connector;
@@ -42,6 +46,7 @@ struct myy_drm_frame_buffer {
 	struct myy_drm_internal_structures related_structures;
 };
 
+// -- FUNCTIONS
 drmModeModeInfo * choose_preferred_resolution_on_connector
 (drmModeConnector * __restrict const connector)
 {
@@ -69,8 +74,8 @@ int drm_init_display
 	 * sending it this framebuffer for display.
 	 * 
 	 * The default selection system is simple :
-	 * - We try to find the first connected screen that accept our
-	 *   lowest resolution (1280x720 32BPP)
+	 * - We try to find the first connected screen and choose its
+	 *   preferred resolution.
 	 */
 	drmModeRes         * __restrict drm_resources;
 	drmModeConnector   * __restrict valid_connector   = NULL;
@@ -152,7 +157,7 @@ void drm_deinit_display()
 	
 }
 
-void * mmap_dumb_buffer
+int make_dumb_buffer_mapable
 (int drm_fd,
  struct drm_mode_create_dumb * __restrict const dumb_buffer)
 {
@@ -162,17 +167,14 @@ void * mmap_dumb_buffer
 		.offset = 0
 	};
 
-	void * mmapped_address = NULL;
+	return ioctl(drm_fd, DRM_IOCTL_MODE_MAP_DUMB, &map_request);
 
-	if (ioctl(drm_fd, DRM_IOCTL_MODE_MAP_DUMB, &map_request) < 0)
-		goto dumb_buffer_mapping_request_denied;
-
-	mmapped_address = mmap(
+	/*mmapped_address = mmap(
 		0, dumb_buffer->size, PROT_READ | PROT_WRITE, MAP_SHARED,
 		drm_fd, map_request.offset);
 
 dumb_buffer_mapping_request_denied:
-	return mmapped_address;
+	return mmapped_address;*/
 
 }
 
@@ -182,7 +184,6 @@ uint32_t drm_crtc_get_current
 	return myy_fb->related_structures.screen_encoder->crtc_id;
 }
 
-// -- TESTED FUNCTIONS
 int main() {
 	char const * __restrict const drm_hardware_dev_node_path =
 		"/dev/dri/card0";
@@ -192,7 +193,6 @@ int main() {
 	int prime_fd = -1;
 	int ret = 0;
 	uint32_t current_crtc_id = 0;
-	drmModeCrtc * this_program_crtc = NULL;
 	drmModeCrtc * crtc_to_restore = NULL;
 
 	if (drm_fd < 0) {
@@ -265,17 +265,25 @@ int main() {
 		&myy_drm_fb.related_structures.valid_connector->connector_id,
 		1, myy_drm_fb.related_structures.chosen_resolution);
 
-	/*prime_fd = drm_convert_buffer_handle_to_prime_fd(
+	/*if (make_dumb_buffer_mapable(drm_fd, &myy_drm_fb.metadata) < 0) {
+		LOG("Could not make dumb buffer MMAPable\n");
+		goto could_not_export_dumb_buffer;
+	}*/
+
+	prime_fd = drm_convert_buffer_handle_to_prime_fd(
 		drm_fd, myy_drm_fb.metadata.handle);
 	if (prime_fd < 0) {
 		LOG("Unable to convert the GEM handle to a DRM Handle : %m\n");
 		goto could_not_export_dumb_buffer;
 	}
 
-	LOG("Got a Prime buffer FD : %d ! Yay !\n", prime_fd);*/
+	LOG("Got a Prime buffer FD : %d ! Yay !\n", prime_fd);
 
-	myy_drm_fb.buffer = mmap_dumb_buffer(drm_fd, &myy_drm_fb.metadata);
-
+	myy_drm_fb.buffer = mmap(
+		0, myy_drm_fb.metadata.size,
+		PROT_READ | PROT_WRITE, MAP_SHARED,
+		prime_fd, 0);
+	
 	if (!myy_drm_fb.buffer || myy_drm_fb.buffer == MAP_FAILED) {
 		LOG("Could not map buffer exported through PRIME : %m\n");
 		goto could_not_map_buffer;
@@ -334,7 +342,7 @@ int main() {
 	munmap(myy_drm_fb.buffer, myy_drm_fb.metadata.size);
 
 could_not_map_buffer:
-//could_not_export_dumb_buffer:
+could_not_export_dumb_buffer:
 	free_drm_dumb_buffer(drm_fd, myy_drm_fb.metadata.handle);
 	drmModeSetCrtc(
 		drm_fd, crtc_to_restore->crtc_id,
