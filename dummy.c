@@ -33,6 +33,8 @@
 // cdev_init and help us generate the /dev entries
 #include <linux/cdev.h>
 
+#include "include/myy_ioctl.h"
+
 struct myy_driver_data;
 struct static_vpu_metadata;
 
@@ -82,8 +84,9 @@ static long myy_dev_ioctl
 (struct file * const filp,
  unsigned int const cmd, unsigned long const arg)
 {
-	printk(KERN_INFO "IOCTL on %pD !\n", filp);
-	return 0;
+	printk(KERN_INFO "IOCTL on %pD - %u - %lu!\n", filp, cmd, arg);
+	if (cmd == MYY_IOCTL_HELLO) printk("Meow !\n");
+	return cmd;
 }
 
 static int myy_dev_open(struct inode * inode, struct file * filp)
