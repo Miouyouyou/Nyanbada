@@ -86,28 +86,35 @@ static long myy_dev_ioctl
 (struct file * const filp,
  unsigned int const cmd, unsigned long const arg)
 {
+	int ret = 0;
+
 	printk(KERN_INFO "IOCTL on %pD - %u - %lu!\n", filp, cmd, arg);
+
 	switch (cmd) {
 		case MYY_IOCTL_HELLO:
 			printk("Meow !\n");
+			ret = 1;
 			break;
 		case MYY_IOCTL_TEST_FD_PASSING:
 			printk("So that %d is my FD ?\n", (__s32) arg);
+			ret = (__s32) arg;
 			break;
 		case MYY_IOCTL_TEST_DMA_FD_PASSING: {
+			int const dma_fd = (__s32) arg;
 			struct dma_buf * __restrict const buf =
-				dma_buf_get((__s32) arg);
+				dma_buf_get(dma_fd);
 			char const * __restrict const owner = 
 				buf->owner ? buf->owner->name : "(Unknown)";
 			printk(
 				"So... Got a DMA Buffer of %zu bytes from owner %s\n",
 				buf->size, owner
 			);
+			ret = buf->size;
 			dma_buf_put(buf);
 		}
 		break;
 	}
-	return cmd;
+	return ret;
 }
 
 static int myy_dev_open(struct inode * inode, struct file * filp)
@@ -132,10 +139,10 @@ static const struct file_operations myy_dev_file_ops = {
 // --- DEVICE PROBING AND INIT
 
 /* The current objectives are :
- * - Get a DMA buffer using PRIME from a user application
- * - Send the file descriptor of this DMA Buffer to the driver, using
- *   simple IOCTL
- * - Get the DMA Buffer from this FD
+ * [x] Get a DMA buffer using PRIME from a user application
+ * [x] Send the file descriptor of this DMA Buffer to the driver,
+ *     using simple IOCTL
+ * [x] Get the DMA Buffer from this FD
  * - Attach it to the VPU device
  * - Map it
  * - Write something in it

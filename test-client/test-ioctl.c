@@ -21,11 +21,15 @@
 
 #include <string.h>
 
+#include <assert.h>
+
 #define LOG(msg, ...) \
 	fprintf(\
 		stderr, "[%s (%s:%d)] "msg,\
 		__func__, __FILE__, __LINE__, ##__VA_ARGS__ \
 	)
+
+#define ALIGN_TO_POW2(n, pow2) ((n + pow2 - 1) & ~(pow2 - 1))
 
 int create_dumb_buffer
 (int drm_fd, struct drm_mode_create_dumb * __restrict create_request)
@@ -43,8 +47,8 @@ int main() {
 	if (vpu_fd < 0)
 		goto program_end;
 
-	ioctl(vpu_fd, MYY_IOCTL_HELLO, NULL);
-	ioctl(vpu_fd, MYY_IOCTL_TEST_FD_PASSING, vpu_fd);
+	assert(1 == ioctl(vpu_fd, MYY_IOCTL_HELLO, NULL));
+	assert(vpu_fd == ioctl(vpu_fd, MYY_IOCTL_TEST_FD_PASSING, vpu_fd));
 
 	int drm_fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
 
@@ -79,7 +83,12 @@ int main() {
 
 	uint32_t exported_fd = export_request.fd;
 
-	ioctl(vpu_fd, MYY_IOCTL_TEST_DMA_FD_PASSING, exported_fd);
+	uint64_t expected_size = 
+		ALIGN_TO_POW2(dumb_buffer_to_export.size, 4096);
+	assert(
+		expected_size
+		== ioctl(vpu_fd, MYY_IOCTL_TEST_DMA_FD_PASSING, exported_fd)
+	);
 
 dumb_buffer_not_exported: {
 		struct drm_mode_destroy_dumb const destroy_dumb_request = {
