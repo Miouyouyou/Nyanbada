@@ -11,8 +11,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-// O_CLOEXEC
-//#include <asm-generic/fcntl.h>
 
 #include <unistd.h>
 
@@ -249,7 +247,7 @@ int main()
 
 	/* The fun begins ! At last !
 	 * We'll do something simple :
-	 * We'll list a row of pixel, on the screen, starting from the top,
+	 * We'll lit a row of pixel, on the screen, starting from the top,
 	 * down to the bottom of screen, using either Red, Blue or Green
 	 * randomly, each time we press Enter.
 	 * If we press 'q' and then Enter, the process will stop.

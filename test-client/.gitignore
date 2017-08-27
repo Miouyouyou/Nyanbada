@@ -1,6 +1,1 @@
-client
-test-drm-itself
-test-drm-radeon
-test-prime-dumb
-test-prime-dumb-kms
-test-prime-radeon
+bin/test-*

@@ -10,8 +10,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-// O_CLOEXEC
-#include <asm-generic/fcntl.h>
 
 #include <unistd.h>
 

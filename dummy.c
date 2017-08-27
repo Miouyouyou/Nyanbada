@@ -33,6 +33,8 @@
 // cdev_init and help us generate the /dev entries
 #include <linux/cdev.h>
 
+#include <linux/types.h>
+
 #include "include/myy_ioctl.h"
 
 struct myy_driver_data;
@@ -85,7 +87,26 @@ static long myy_dev_ioctl
  unsigned int const cmd, unsigned long const arg)
 {
 	printk(KERN_INFO "IOCTL on %pD - %u - %lu!\n", filp, cmd, arg);
-	if (cmd == MYY_IOCTL_HELLO) printk("Meow !\n");
+	switch (cmd) {
+		case MYY_IOCTL_HELLO:
+			printk("Meow !\n");
+			break;
+		case MYY_IOCTL_TEST_FD_PASSING:
+			printk("So that %d is my FD ?\n", (__s32) arg);
+			break;
+		case MYY_IOCTL_TEST_DMA_FD_PASSING: {
+			struct dma_buf * __restrict const buf =
+				dma_buf_get((__s32) arg);
+			char const * __restrict const owner = 
+				buf->owner ? buf->owner->name : "(Unknown)";
+			printk(
+				"So... Got a DMA Buffer of %zu bytes from owner %s\n",
+				buf->size, owner
+			);
+			dma_buf_put(buf);
+		}
+		break;
+	}
 	return cmd;
 }
 

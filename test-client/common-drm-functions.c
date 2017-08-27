@@ -8,9 +8,6 @@
 // ioctl...
 #include <sys/ioctl.h>
 
-// O_CLOEXEC
-#include <asm-generic/fcntl.h>
-
 // errno
 #include <errno.h>
 
