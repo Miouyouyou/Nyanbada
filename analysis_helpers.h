@@ -13,6 +13,24 @@ static inline const char * __restrict myy_bool_str
 	return value ? "true" : "false";
 }
 
+
+static void print_resources
+(struct resource * resources, uint const n_resources)
+{
+	uint r;
+	uint r_max = n_resources - 1;
+	for (r = 0; r < n_resources; r++) {
+		struct resource * current_res =	&resources[r];
+		printk("[%d/%d] Resource\n", r, r_max);
+		printk("  Address : %p\n", current_res);
+		printk("  Start : %pa\n", &current_res->start);
+		printk("  End   : %pa\n", &current_res->end);
+		printk("  Name  : %s\n",  current_res->name);
+		printk("  Flags : %lx\n", current_res->flags);
+		printk("  Desc  : %lx\n", current_res->desc);
+	}
+}
+
 static void print_platform_device
 (struct platform_device const * __restrict const pdev)
 {
@@ -22,14 +40,18 @@ static void print_platform_device
 		"ID auto            : %s\n"
 		"Device (name)      : %s\n"
 		"Num resources      : %u\n"
+		"Resources address  : %p\n"
 		"Platform device ID : %s\n",
 		pdev->name,
 		pdev->id,
 		myy_bool_str(pdev->id_auto),
 		dev_name(&pdev->dev),
 		pdev->num_resources,
+		pdev->resource,
 		pdev->id_entry->name
 	);
+	printk(KERN_INFO "Printing resources of device");
+	print_resources(pdev->resource, pdev->num_resources);
 }
 
 static void print_device_node_properties

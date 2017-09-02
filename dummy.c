@@ -99,20 +99,21 @@ static long myy_dev_ioctl
 			printk("So that %d is my FD ?\n", (__s32) arg);
 			ret = (__s32) arg;
 			break;
-		case MYY_IOCTL_TEST_DMA_FD_PASSING: {
-			int const dma_fd = (__s32) arg;
-			struct dma_buf * __restrict const buf =
-				dma_buf_get(dma_fd);
-			char const * __restrict const owner = 
-				buf->owner ? buf->owner->name : "(Unknown)";
-			printk(
-				"So... Got a DMA Buffer of %zu bytes from owner %s\n",
-				buf->size, owner
-			);
-			ret = buf->size;
-			dma_buf_put(buf);
-		}
-		break;
+		case MYY_IOCTL_TEST_DMA_FD_PASSING:
+			{
+				int const dma_fd = (__s32) arg;
+				struct dma_buf * __restrict const buf =
+					dma_buf_get(dma_fd);
+				char const * __restrict const owner = 
+					buf->owner ? buf->owner->name : "(Unknown)";
+				printk(
+					"So... Got a DMA Buffer of %zu bytes from owner %s\n",
+					buf->size, owner
+				);
+				ret = buf->size;
+				dma_buf_put(buf);
+			}
+			break;
 	}
 	return ret;
 }
@@ -163,7 +164,7 @@ static int myy_vpu_probe(struct platform_device * pdev)
 
 	/* The data structure that will be used as driver's private data. */
 	struct myy_driver_data * __restrict const driver_data =
-		devm_kzalloc(&pdev->dev, sizeof(struct iommu *), GFP_KERNEL);
+		devm_kzalloc(&pdev->dev, sizeof(struct myy_driver_data), GFP_KERNEL);
 
 	/* Will be used to create /dev entries */
 	struct cdev * __restrict const cdev = cdev_alloc();
@@ -173,7 +174,7 @@ static int myy_vpu_probe(struct platform_device * pdev)
 	/* Used to check various return codes for errors */
 	int ret;
 
-	print_platform_device_device_node(pdev);
+	print_platform_device(pdev);
 
 	/* Setup the private data storage for this device.
 	 * 
@@ -216,7 +217,7 @@ static int myy_vpu_probe(struct platform_device * pdev)
 
 	driver_data->sub_dev = 
 		device_create(driver_data->cls, vpu_dev,	vpu_dev_t, NULL, "%s", name);
-	
+
 	dev_info(&pdev->dev, "cdev_add returned %d\n", ret);
 
 

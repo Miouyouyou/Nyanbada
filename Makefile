@@ -5,11 +5,13 @@ CROSS_COMPILE ?= armv7a-hardfloat-linux-gnueabi-
 ccflags-y += -DMYY_TESTS
 
 myy-vpu-objs := dummy.o
+crashy-objs := crash-dummy.o
 
 # Careful, obj-y is for elements built into the kernel !
 # obj-m is for elements built as modules
 # We're building a module, so obj-m is required !
 obj-m += myy-vpu.o
+obj-m += crashy.o
 
 all:
 	make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(PWD) -C $(MYY_KERNEL_DIR) modules
