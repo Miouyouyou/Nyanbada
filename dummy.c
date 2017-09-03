@@ -50,10 +50,36 @@ struct static_vpu_metadata;
  */
 struct myy_driver_data {
 	struct iommu_domain * __restrict iommu_domain;
-	struct cdev * __restrict cdev;
 	dev_t device_id;
 	struct class * __restrict cls;
 	struct device * __restrict sub_dev;
+	/* Not a pointer in order to use the container_of macro hack to get
+	 * back this allocated data structure.
+	 * 
+	 * Basically, when opening the /dev/node, the kernel will provide us
+	 * the inode of the opened node. From this inode, we'll get back the
+	 * address of the cdev structure that generated this /dev/node.
+	 * 
+	 * Since :
+	 * - the cdev structure used in our code is actually embedded in
+	 *   a myy_driver_data structure;
+	 * - the C language provide facilities to determine the offset of the
+	 *   cdev member inside myy_driver_data;
+	 * - the cdev structure address passed in "open" is actually the
+	 *   address of struct myy_driver_data + its cdev member offset.
+	 * 
+	 * `container_of` will be able to use that cdev address to get the
+	 * address where `struct myy_driver_data` actually start and pass it
+	 * back to us.
+	 * 
+	 * This will NEVER work if we allocate a memory region for cdev, using
+	 * `cdev_alloc` and only store its address in `myy_driver_data`,
+	 * since the address of `myy_driver_data` and the address of `cdev`
+	 * would be then uncorrelated !
+	 * 
+	 * Still, this is the kind of hack that only pass in kernel code.
+	 */
+	struct cdev cdev;
 };
 
 /* Not used at the moment */
@@ -90,6 +116,8 @@ static long myy_dev_ioctl
 
 	printk(KERN_INFO "IOCTL on %pD - %u - %lu!\n", filp, cmd, arg);
 
+	printk("Private data address : %p\n", filp->private_data);
+
 	switch (cmd) {
 		case MYY_IOCTL_HELLO:
 			printk("Meow !\n");
@@ -120,7 +148,12 @@ static long myy_dev_ioctl
 
 static int myy_dev_open(struct inode * inode, struct file * filp)
 {
+	struct myy_driver_data * __restrict const myy_driver_data =
+		container_of(inode->i_cdev, struct myy_driver_data, cdev);
 	printk(KERN_INFO "Opening %pD !\n", filp);
+	printk(KERN_INFO "Container of got : %p\n", myy_driver_data);
+
+	filp->private_data = myy_driver_data;
 	return nonseekable_open(inode, filp);
 }
 
@@ -155,6 +188,14 @@ static const struct file_operations myy_dev_file_ops = {
  * Special IOMMU operations might be required for that to work.
  */
 
+/* TODO :
+ * - ioremap the VPU memory address space or we won't be able to do
+ *   anything with it !
+ * - Check the old code again to determine who binds who, when it comes
+ *   to IOMMU.
+ * - Try to initiate a DMA copy. This will be fun...
+ */
+
 /* Should return 0 on success and a negative errno on failure. */
 static int myy_vpu_probe(struct platform_device * pdev)
 {
@@ -167,8 +208,7 @@ static int myy_vpu_probe(struct platform_device * pdev)
 		devm_kzalloc(&pdev->dev, sizeof(struct myy_driver_data), GFP_KERNEL);
 
 	/* Will be used to create /dev entries */
-	struct cdev * __restrict const cdev = cdev_alloc();
-	dev_t vpu_dev_t;
+	struct cdev * __restrict const cdev = &driver_data->cdev;
 	const char * __restrict const name = pdev->dev.of_node->name;
 
 	/* Used to check various return codes for errors */
@@ -191,6 +231,7 @@ static int myy_vpu_probe(struct platform_device * pdev)
 	 */
 	platform_set_drvdata(pdev, driver_data);
 
+	printk("Private data address : %p\n", driver_data);
 
 	/* Initialize our /dev entries
 	 * 
@@ -199,13 +240,13 @@ static int myy_vpu_probe(struct platform_device * pdev)
 	 * 
 	 * alloc_chrdev_region will call MKDEV
 	 */
-	ret = alloc_chrdev_region(&vpu_dev_t, 0, 1, name);
+	ret = alloc_chrdev_region(&driver_data->device_id, 0, 1, name);
 	if (ret)
 		dev_err(vpu_dev, "alloc_chrdev_region returned %d\n", ret);
 
 	cdev_init(cdev, &myy_dev_file_ops);
 	cdev->owner = THIS_MODULE;
-	ret = cdev_add(cdev, vpu_dev_t, 1);
+	ret = cdev_add(cdev, driver_data->device_id, 1);
 
 	driver_data->cls = class_create(THIS_MODULE, name);
 
@@ -215,16 +256,14 @@ static int myy_vpu_probe(struct platform_device * pdev)
 		goto err;
 	}
 
-	driver_data->sub_dev = 
-		device_create(driver_data->cls, vpu_dev,	vpu_dev_t, NULL, "%s", name);
+	driver_data->sub_dev = device_create(
+		driver_data->cls, vpu_dev, driver_data->device_id,
+		NULL, "%s", name
+	);
 
 	dev_info(&pdev->dev, "cdev_add returned %d\n", ret);
 
-
-	/* Set up our driver's private metadata with the valid values. */
 	driver_data->iommu_domain = NULL;
-	driver_data->cdev         = cdev;
-	driver_data->device_id    = vpu_dev_t;
 err:
 	return ret;
 }
@@ -238,7 +277,7 @@ static int myy_vpu_remove(struct platform_device * pdev)
 	/* Remove the subdevice and /dev entries */
 	device_destroy(driver_data->cls, driver_data->device_id);
 	class_destroy(driver_data->cls);
-	cdev_del(driver_data->cdev);
+	cdev_del(&driver_data->cdev);
 	unregister_chrdev_region(driver_data->device_id, 1);
 
 	/* Free the IOMMU domain if it was allocated */
@@ -255,7 +294,6 @@ static int myy_vpu_remove(struct platform_device * pdev)
 	 * a few milliseconds later.
 	 */
 	driver_data->iommu_domain = NULL;
-	driver_data->cdev         = NULL;
 	driver_data->device_id    = 0;
 	driver_data->cls          = NULL;
 	driver_data->sub_dev      = NULL;
